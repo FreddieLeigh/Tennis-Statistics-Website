@@ -2,9 +2,31 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
+from model import (
+    train_model,
+    get_prediction_features,
+    FEATURES
+)
+
 st.title("Tennis analytics")
 
 data = pd.read_csv("data/tennis.csv")
+
+@st.cache_resource
+def load_model():
+    model, logistic_accuracy, rf_accuracy, _ = train_model(data)
+    return model, logistic_accuracy, rf_accuracy
+
+model, logistic_accuracy, rf_accuracy = load_model()
+
+@st.cache_data
+def get_cached_prediction_features(player_1, player_2, surface):
+    return get_prediction_features(
+        data,
+        player_1,
+        player_2,
+        surface
+    )
 
 st.write("Number of matches:", len(data))
 
@@ -60,6 +82,7 @@ fig = px.bar(
     text="Win Rate"
 )
 
+
 fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
 fig.update_layout(yaxis_title="Win Rate (%)", xaxis_title="")#maybe change
                   
@@ -100,7 +123,6 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
 
 
 st.subheader("Head-to-Head")
@@ -181,43 +203,32 @@ prediction_surface = st.selectbox(
     key="prediction_surface"
 )
 
-p1_matches = data[
-    ((data["Player_1"] == player_1) | (data["Player_2"] == player_1)) &
-    (data["Surface"] == prediction_surface)
-]
+prediction_features = get_cached_prediction_features(
+    player_1,
+    player_2,
+    prediction_surface
+)
 
-p2_matches = data[
-    ((data["Player_1"] == player_2) | (data["Player_2"] == player_2)) &
-    (data["Surface"] == prediction_surface)
-]
+probabilities = model.predict_proba(
+    prediction_features
+)[0]
 
-p1_win_rate = (p1_matches["Winner"] == player_1).mean()
-p2_win_rate = (p2_matches["Winner"] == player_2).mean()
+probability_1 = probabilities[1]
+probability_2 = probabilities[0]
 
-latest_p1 = data[
-    (data["Player_1"] == player_1) | (data["Player_2"] == player_1)
-].sort_values("Date").iloc[-1]
-
-latest_p2 = data[
-    (data["Player_1"] == player_2) | (data["Player_2"] == player_2)
-].sort_values("Date").iloc[-1]
-
-if latest_p1["Player_1"] == player_1:
-    rank_1 = latest_p1["Rank_1"]
+if probability_1 >= probability_2:
+    predicted_winner = player_1
+    winner_probability = probability_1
 else:
-    rank_1 = latest_p1["Rank_2"]
-
-if latest_p2["Player_1"] == player_2:
-    rank_2 = latest_p2["Rank_1"]
-else:
-    rank_2 = latest_p2["Rank_2"]
+    predicted_winner = player_2
+    winner_probability = probability_2
 
 
-score_1 = (1 / rank_1) * 0.4 + p1_win_rate * 0.6
-score_2 = (1 / rank_2) * 0.4 + p2_win_rate * 0.6
+st.success(
+    f" Predicted Winner: **{predicted_winner}** "
+    f"({winner_probability * 100:.1f}% probability)"
+)
 
-probability_1 = score_1 / (score_1 + score_2)
-probability_2 = 1 - probability_1
 
 col1, col2 = st.columns(2)
 
@@ -233,3 +244,93 @@ with col2:
         f"{probability_2 * 100:.1f}%"
     )
 
+
+prediction_chart = pd.DataFrame({
+    "Player": [player_1, player_2],
+    "Win Probability": [
+        probability_1 * 100,
+        probability_2 * 100
+    ]
+})
+
+fig = px.bar(
+    prediction_chart,
+    x="Player",
+    y="Win Probability",
+    range_y=[0, 100],
+    title=f"Predicted Win Probability on {prediction_surface}"
+)
+
+fig.update_layout(
+    yaxis_title="Probability (%)",
+    xaxis_title="",
+    showlegend=False
+)
+
+st.plotly_chart(
+    fig,
+    use_container_width=True
+)
+
+st.subheader("Why does the model make this prediction?")
+
+feature_importance = pd.DataFrame({
+    "Feature": FEATURES,
+    "Importance": model.feature_importances_
+})
+
+feature_importance["Feature"] = feature_importance["Feature"].replace({
+    "rank_diff": "Ranking Difference",
+    "points_diff": "Ranking Points Difference",
+    "form_diff": "Recent Form",
+    "surface_form_diff": "Surface Form",
+    "h2h_diff": "Head-to-Head",
+    "elo_diff": "Overall Elo",
+    "surface_elo_diff": "Surface Elo"
+})
+
+feature_importance = feature_importance.sort_values(
+    "Importance",
+    ascending=True
+)
+
+importance_fig = px.bar(
+    feature_importance,
+    x="Importance",
+    y="Feature",
+    orientation="h",
+    title="Random Forest Feature Importance"
+)
+
+importance_fig.update_layout(
+    xaxis_title="Importance",
+    yaxis_title=""
+)
+
+st.plotly_chart(
+    importance_fig,
+    use_container_width=True
+)
+st.subheader("Prediction Inputs")
+
+display_features = prediction_features.copy()
+
+display_features.columns = [
+    "Ranking Difference",
+    "Ranking Points Difference",
+    "Recent Form Difference",
+    "Surface Form Difference",
+    "Head-to-Head Difference",
+    "Overall Elo Difference",
+    "Surface Elo Difference"
+]
+
+st.dataframe(
+    display_features,
+    use_container_width=True
+)
+
+st.caption(
+    "Predictions are based on historical data through the latest "
+    "match available in the dataset."
+)
