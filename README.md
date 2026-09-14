@@ -11,3 +11,12 @@ match outcomes using machine learning.
 - Interactive match history
 - Match prediction
 
+# Machine Learning
+- Logistic Regression baseline
+- Random Forest
+- Chronological 80/20 split
+- Elo ratings
+- Recent form
+- Surface form
+- H2H
+- Leakage prevention
