@@ -295,6 +295,10 @@ rf_accuracy = accuracy_score(
     rf_predictions
 )
 
+import joblib
+
+joblib.dump(random_forest, "tennis_model.pkl")
+
 
 # -----------------------------
 # Results
