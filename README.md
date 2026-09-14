@@ -10,4 +10,4 @@ match outcomes using machine learning.
 - Head-to-head analysis
 - Interactive match history
 - Match prediction
-:::
+
